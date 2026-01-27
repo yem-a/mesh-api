@@ -1,0 +1,22 @@
+# mesh-api requirements
+
+# Web framework
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Database
+supabase
+
+# Integrations
+stripe
+anthropic
+
+# Utilities
+python-dotenv
+pydantic
+pydantic-settings
+
+# Testing
+pytest
+pytest-asyncio
