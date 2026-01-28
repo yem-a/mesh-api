@@ -26,9 +26,10 @@ def get_oauth_url(user_id: str) -> str:
     params = {
         "client_id": settings.stripe_client_id,
         "state": user_id,
-        "scope": "read_only",
+        "scope": "read_write",
         "response_type": "code",
         "redirect_uri": f"{settings.api_url}/auth/stripe/callback",
+        "stripe_landing": "login", 
     }
     
     query = "&".join(f"{k}={v}" for k, v in params.items())
