@@ -78,8 +78,11 @@ def calculate_confidence(
 
 def _score_amount(stripe_amount: float, qbo_amount: float, factors: list[str]) -> int:
     """Score based on amount match (0-40 points)."""
-    diff = abs(stripe_amount - qbo_amount)
-    diff_percent = (diff / stripe_amount * 100) if stripe_amount > 0 else 100
+    # Use absolute values to handle negative amounts (refunds)
+    s_abs = abs(stripe_amount)
+    q_abs = abs(qbo_amount)
+    diff = abs(s_abs - q_abs)
+    diff_percent = (diff / s_abs * 100) if s_abs > 0 else 100
     
     if diff < 0.01:
         factors.append("Exact amount match")

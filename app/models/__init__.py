@@ -3,6 +3,7 @@
 from app.models.transaction import (
     Transaction,
     TransactionCreate,
+    TransactionType,
     StripeCharge,
     QuickBooksPayment,
 )
@@ -34,6 +35,7 @@ __all__ = [
     # Transaction
     "Transaction",
     "TransactionCreate",
+    "TransactionType",
     "StripeCharge",
     "QuickBooksPayment",
     # Match

@@ -23,6 +23,7 @@ class SyncResponse(BaseModel):
     service: str
     transactions_synced: int
     message: str = None
+    breakdown: dict = None
 
 
 # ============================================
@@ -56,6 +57,7 @@ async def sync_stripe(request: SyncRequest):
             {
                 "external_id": t.external_id,
                 "source": t.source,
+                "transaction_type": t.transaction_type,
                 "amount": t.amount,
                 "transaction_date": t.transaction_date.isoformat(),
                 "description": t.description,
@@ -65,17 +67,23 @@ async def sync_stripe(request: SyncRequest):
             }
             for t in transactions
         ]
-        
+
         # Save to database
         saved_count = await save_transactions(request.user_id, txn_dicts)
-        
+
+        # Build breakdown by type
+        breakdown = {}
+        for t in transactions:
+            breakdown[t.transaction_type] = breakdown.get(t.transaction_type, 0) + 1
+
         return SyncResponse(
             success=True,
             service="stripe",
             transactions_synced=saved_count,
             message=f"Synced {saved_count} transactions from Stripe",
+            breakdown=breakdown,
         )
-    
+
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -115,6 +123,7 @@ async def sync_quickbooks(request: SyncRequest):
             {
                 "external_id": t.external_id,
                 "source": t.source,
+                "transaction_type": t.transaction_type,
                 "amount": t.amount,
                 "transaction_date": t.transaction_date.isoformat(),
                 "description": t.description,
@@ -124,15 +133,21 @@ async def sync_quickbooks(request: SyncRequest):
             }
             for t in transactions
         ]
-        
+
         # Save to database
         saved_count = await save_transactions(request.user_id, txn_dicts)
-        
+
+        # Build breakdown by type
+        breakdown = {}
+        for t in transactions:
+            breakdown[t.transaction_type] = breakdown.get(t.transaction_type, 0) + 1
+
         return SyncResponse(
             success=True,
             service="quickbooks",
             transactions_synced=saved_count,
             message=f"Synced {saved_count} transactions from QuickBooks",
+            breakdown=breakdown,
         )
     
     except Exception as e:

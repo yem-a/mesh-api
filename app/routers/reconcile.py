@@ -72,6 +72,7 @@ async def run_reconciliation(request: ReconcileRequest):
         TransactionCreate(
             external_id=t["external_id"],
             source="stripe",
+            transaction_type=t.get("transaction_type", "charge"),
             amount=float(t["amount"]),
             transaction_date=t["transaction_date"],
             description=t.get("description"),
@@ -81,11 +82,12 @@ async def run_reconciliation(request: ReconcileRequest):
         )
         for t in stripe_txns
     ]
-    
+
     qbo_transactions = [
         TransactionCreate(
             external_id=t["external_id"],
             source="quickbooks",
+            transaction_type=t.get("transaction_type", "payment"),
             amount=float(t["amount"]),
             transaction_date=t["transaction_date"],
             description=t.get("description"),

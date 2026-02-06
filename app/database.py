@@ -80,13 +80,15 @@ async def save_transactions(user_id: str, transactions: list[dict]) -> int:
     return len(response.data) if response.data else 0
 
 
-async def get_transactions(user_id: str, source: str = None) -> list[dict]:
+async def get_transactions(user_id: str, source: str = None, transaction_type: str = None) -> list[dict]:
     """Get transactions for a user."""
     query = supabase_admin.table("transactions").select("*").eq("user_id", user_id)
-    
+
     if source:
         query = query.eq("source", source)
-    
+    if transaction_type:
+        query = query.eq("transaction_type", transaction_type)
+
     response = query.order("transaction_date", desc=True).execute()
     return response.data
 

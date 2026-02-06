@@ -135,8 +135,20 @@ def classify_unmatched(
     source: str,
 ) -> DiscrepancyClassification:
     """Classify an unmatched transaction."""
-    
+
     if source == "stripe":
+        if getattr(transaction, "transaction_type", "charge") == "refund":
+            return DiscrepancyClassification(
+                type="refund_not_recorded",
+                severity="warning",
+                explanation=(
+                    f"Refund {transaction.external_id} (${abs(transaction.amount):,.2f}) "
+                    f"exists in Stripe but has no matching credit in QuickBooks."
+                ),
+                suggested_action="Create a credit memo or refund receipt in QuickBooks",
+                auto_resolvable=False,
+                amount_difference=abs(transaction.amount),
+            )
         return DiscrepancyClassification(
             type="missing_in_qbo",
             severity="critical",
@@ -152,7 +164,7 @@ def classify_unmatched(
             type="missing_in_stripe",
             severity="warning",
             explanation=(
-                f"QuickBooks entry {transaction.external_id} (${transaction.amount:,.2f}) "
+                f"QuickBooks entry {transaction.external_id} (${abs(transaction.amount):,.2f}) "
                 f"has no matching Stripe transaction. This may be a manual payment."
             ),
             suggested_action="Verify this payment was received outside of Stripe",

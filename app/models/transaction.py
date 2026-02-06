@@ -4,29 +4,33 @@ from datetime import date, datetime
 from typing import Optional, Literal
 from pydantic import BaseModel, Field
 
+TransactionType = Literal["charge", "refund", "payment", "invoice", "credit_memo", "other"]
+
 
 class Transaction(BaseModel):
     """A transaction from Stripe or QuickBooks."""
-    
+
     id: str
     external_id: str
     source: Literal["stripe", "quickbooks"]
+    transaction_type: TransactionType = "charge"
     amount: float
     transaction_date: date
     description: Optional[str] = None
     customer_id: Optional[str] = None
     customer_name: Optional[str] = None
     metadata: Optional[dict] = Field(default_factory=dict)
-    
+
     class Config:
         from_attributes = True
 
 
 class TransactionCreate(BaseModel):
     """Transaction data from external source."""
-    
+
     external_id: str
     source: Literal["stripe", "quickbooks"]
+    transaction_type: TransactionType = "charge"
     amount: float
     transaction_date: date
     description: Optional[str] = None
@@ -50,6 +54,7 @@ class StripeCharge(BaseModel):
         return TransactionCreate(
             external_id=self.id,
             source="stripe",
+            transaction_type="charge",
             amount=self.amount,
             transaction_date=self.created.date(),
             description=self.description,
