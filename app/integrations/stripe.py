@@ -58,10 +58,11 @@ async def exchange_code(code: str) -> str:
 # Pagination & Customer Resolution Helpers
 # ============================================
 
-def _paginate_stripe_list(resource_method, **params) -> list:
+def _paginate_stripe_list(resource_method, params: dict) -> list:
     """
     Paginate through a Stripe list endpoint using starting_after cursor.
 
+    StripeClient v14 methods accept a single params dict, not keyword args.
     Returns all items across all pages.
     """
     all_items = []
@@ -72,7 +73,7 @@ def _paginate_stripe_list(resource_method, **params) -> list:
         if starting_after:
             params["starting_after"] = starting_after
 
-        response = resource_method(**params)
+        response = resource_method(params=params)
 
         items = response.data
         all_items.extend(items)
@@ -102,7 +103,7 @@ def _resolve_customer_names(client, customer_ids: set) -> dict:
         if not cid or cid in cache:
             continue
         try:
-            customer = client.customers.retrieve(cid)
+            customer = client.v1.customers.retrieve(cid)
             cache[cid] = customer.name or customer.email or cid
         except Exception:
             cache[cid] = cid
@@ -144,9 +145,8 @@ async def fetch_transactions(
         # 1. Fetch all charges (paginated)
         # ============================
         all_charges = _paginate_stripe_list(
-            client.charges.list,
-            limit=100,
-            created={"gte": since_timestamp},
+            client.v1.charges.list,
+            {"limit": 100, "created": {"gte": since_timestamp}},
         )
 
         # Batch-resolve customer names
@@ -164,7 +164,7 @@ async def fetch_transactions(
             net_amount = None
             if charge.balance_transaction:
                 try:
-                    bal_txn = client.balance_transactions.retrieve(charge.balance_transaction)
+                    bal_txn = client.v1.balance_transactions.retrieve(charge.balance_transaction)
                     fee_amount = bal_txn.fee / 100.0
                     net_amount = bal_txn.net / 100.0
                 except Exception:
@@ -193,9 +193,8 @@ async def fetch_transactions(
         # 2. Fetch all refunds (paginated)
         # ============================
         all_refunds = _paginate_stripe_list(
-            client.refunds.list,
-            limit=100,
-            created={"gte": since_timestamp},
+            client.v1.refunds.list,
+            {"limit": 100, "created": {"gte": since_timestamp}},
         )
 
         # Build a lookup from charge ID to charge for resolving refund customers
@@ -248,7 +247,7 @@ async def verify_connection(access_token: str) -> dict:
     """
     try:
         client = stripe.StripeClient(access_token)
-        account = client.accounts.retrieve("me")
+        account = client.v1.accounts.retrieve("me")
         return {
             "valid": True,
             "account_id": account.id,

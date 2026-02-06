@@ -59,8 +59,8 @@ async def save_connection(
 
 async def get_connection(user_id: str, service: str) -> dict | None:
     """Get a specific connection."""
-    response = supabase_admin.table("connections").select("*").eq("user_id", user_id).eq("service", service).single().execute()
-    return response.data
+    response = supabase_admin.table("connections").select("*").eq("user_id", user_id).eq("service", service).execute()
+    return response.data[0] if response.data else None
 
 
 async def save_transactions(user_id: str, transactions: list[dict]) -> int:
@@ -134,8 +134,8 @@ async def get_matches(
 
 async def get_match(match_id: str, user_id: str) -> dict | None:
     """Get a single match."""
-    response = supabase_admin.table("matches").select("*").eq("id", match_id).eq("user_id", user_id).single().execute()
-    return response.data
+    response = supabase_admin.table("matches").select("*").eq("id", match_id).eq("user_id", user_id).execute()
+    return response.data[0] if response.data else None
 
 
 async def update_match(match_id: str, updates: dict) -> dict | None:
