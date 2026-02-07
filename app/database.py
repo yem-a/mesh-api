@@ -86,7 +86,7 @@ async def save_transactions(user_id: str, transactions: list[dict]) -> int:
     return len(response.data) if response.data else 0
 
 
-async def get_transactions(user_id: str, source: str = None, transaction_type: str = None) -> list[dict]:
+async def get_transactions(user_id: str, source: str = None, transaction_type: str = None, customer_id: str = None) -> list[dict]:
     """Get transactions for a user."""
     query = supabase_admin.table("transactions").select("*").eq("user_id", user_id)
 
@@ -94,6 +94,8 @@ async def get_transactions(user_id: str, source: str = None, transaction_type: s
         query = query.eq("source", source)
     if transaction_type:
         query = query.eq("transaction_type", transaction_type)
+    if customer_id:
+        query = query.eq("customer_id", customer_id)
 
     response = query.order("transaction_date", desc=True).execute()
     return response.data
@@ -166,3 +168,16 @@ async def save_reconciliation_run(run: dict) -> dict:
     """Save a reconciliation run."""
     response = supabase_admin.table("reconciliation_runs").insert(run).execute()
     return response.data[0] if response.data else None
+
+
+async def get_reconciliation_history(user_id: str, limit: int = 30) -> list[dict]:
+    """Get reconciliation run history for a user."""
+    response = (
+        supabase_admin.table("reconciliation_runs")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return response.data

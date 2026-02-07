@@ -233,17 +233,19 @@ async def sync_all(request: SyncRequest):
 async def get_synced_transactions(
     user_id: str,
     source: str = None,
+    customer_id: str = None,
 ):
     """
     Get synced transactions for a user.
-    
-    Optionally filter by source (stripe or quickbooks).
+
+    Optionally filter by source (stripe or quickbooks) and/or customer_id.
     """
-    transactions = await get_transactions(user_id, source)
-    
+    transactions = await get_transactions(user_id, source, customer_id=customer_id)
+
     return {
         "user_id": user_id,
         "source": source,
+        "customer_id": customer_id,
         "count": len(transactions),
         "transactions": transactions,
     }

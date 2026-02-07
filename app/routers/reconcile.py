@@ -7,7 +7,7 @@ The main endpoint that runs the matching engine.
 """
 
 from datetime import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
 
@@ -15,6 +15,7 @@ from app.database import (
     get_transactions,
     save_matches,
     save_reconciliation_run,
+    get_reconciliation_history,
 )
 from app.core.matching import reconcile
 from app.core.ai_assist import enhance_matches_with_ai
@@ -206,4 +207,27 @@ async def get_reconciliation_results(user_id: str):
             "info": len(discrepancies["info"]),
             "items": discrepancies,
         },
+    }
+
+
+# ============================================
+# Reconciliation History (for trend chart)
+# ============================================
+
+@router.get("/reconcile/{user_id}/history")
+async def get_reconciliation_history_endpoint(
+    user_id: str,
+    limit: int = Query(30, ge=1, le=90),
+):
+    """
+    Get reconciliation run history for a user.
+
+    Returns historical runs for charting reconciliation trends.
+    """
+    runs = await get_reconciliation_history(user_id, limit)
+
+    return {
+        "user_id": user_id,
+        "runs": runs,
+        "count": len(runs),
     }
