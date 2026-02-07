@@ -63,6 +63,12 @@ async def get_connection(user_id: str, service: str) -> dict | None:
     return response.data[0] if response.data else None
 
 
+async def delete_connection(user_id: str, service: str) -> bool:
+    """Delete a connection (disconnect a service)."""
+    response = supabase_admin.table("connections").delete().eq("user_id", user_id).eq("service", service).execute()
+    return len(response.data) > 0 if response.data else False
+
+
 async def save_transactions(user_id: str, transactions: list[dict]) -> int:
     """Save transactions to database."""
     if not transactions:

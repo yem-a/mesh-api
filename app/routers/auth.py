@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
 from app.config import get_settings
-from app.database import save_connection, get_connection
+from app.database import save_connection, get_connection, delete_connection
 from app.integrations import stripe, quickbooks
 
 settings = get_settings()
@@ -189,15 +189,16 @@ async def connection_status(user_id: str):
 async def disconnect_service(user_id: str, service: str):
     """
     Disconnect a service.
-    
+
     Removes the stored tokens (doesn't revoke at provider level).
     """
     if service not in ["stripe", "quickbooks"]:
         raise HTTPException(status_code=400, detail="Invalid service")
-    
-    # TODO: Implement actual disconnection
-    # For now, just return success
+
+    deleted = await delete_connection(user_id, service)
+
     return {
         "success": True,
+        "deleted": deleted,
         "message": f"{service} disconnected",
     }
