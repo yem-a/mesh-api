@@ -4,17 +4,18 @@
 OAuth authentication routes for Stripe and QuickBooks.
 
 Handles the OAuth flow:
-1. /auth/stripe/connect - Redirects to Stripe OAuth
-2. /auth/stripe/callback - Handles Stripe callback, saves tokens
-3. /auth/quickbooks/connect - Redirects to QuickBooks OAuth
-4. /auth/quickbooks/callback - Handles QuickBooks callback, saves tokens
+1. /auth/stripe/connect - Returns Stripe OAuth URL (JWT protected)
+2. /auth/stripe/callback - Handles Stripe callback (public - OAuth redirect)
+3. /auth/quickbooks/connect - Returns QuickBooks OAuth URL (JWT protected)
+4. /auth/quickbooks/callback - Handles QuickBooks callback (public - OAuth redirect)
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
 from app.config import get_settings
 from app.database import save_connection, get_connection, delete_connection
+from app.dependencies import get_current_user
 from app.integrations import stripe, quickbooks
 
 settings = get_settings()
@@ -26,17 +27,14 @@ router = APIRouter()
 # ============================================
 
 @router.get("/stripe/connect")
-async def stripe_connect(user_id: str = Query(..., description="User ID to associate with connection")):
+async def stripe_connect(user_id: str = Depends(get_current_user)):
     """
     Initiate Stripe OAuth flow.
-    
-    Redirects user to Stripe to authorize read-only access.
+
+    Returns the OAuth URL for the frontend to redirect to.
     """
-    if not user_id:
-        raise HTTPException(status_code=400, detail="user_id is required")
-    
     oauth_url = stripe.get_oauth_url(user_id)
-    return RedirectResponse(url=oauth_url)
+    return {"url": oauth_url}
 
 
 @router.get("/stripe/callback")
@@ -48,8 +46,9 @@ async def stripe_callback(
 ):
     """
     Handle Stripe OAuth callback.
-    
+
     Exchanges code for access token and saves to database.
+    This endpoint is public (called by Stripe redirect, no JWT available).
     """
     # Check for errors
     if error:
@@ -57,30 +56,30 @@ async def stripe_callback(
         return RedirectResponse(
             url=f"{settings.frontend_url}/signup?error={error_msg}"
         )
-    
+
     if not code or not state:
         return RedirectResponse(
             url=f"{settings.frontend_url}/signup?error=missing_code_or_state"
         )
-    
+
     user_id = state
-    
+
     try:
         # Exchange code for token
         access_token = await stripe.exchange_code(code)
-        
+
         # Save connection
         await save_connection(
             user_id=user_id,
             service="stripe",
             access_token=access_token,
         )
-        
+
         # Redirect back to frontend with success
         return RedirectResponse(
             url=f"{settings.frontend_url}/signup?stripe=connected"
         )
-    
+
     except Exception as e:
         print(f"Stripe callback error: {e}")
         return RedirectResponse(
@@ -93,17 +92,14 @@ async def stripe_callback(
 # ============================================
 
 @router.get("/quickbooks/connect")
-async def quickbooks_connect(user_id: str = Query(..., description="User ID to associate with connection")):
+async def quickbooks_connect(user_id: str = Depends(get_current_user)):
     """
     Initiate QuickBooks OAuth flow.
-    
-    Redirects user to QuickBooks to authorize access.
+
+    Returns the OAuth URL for the frontend to redirect to.
     """
-    if not user_id:
-        raise HTTPException(status_code=400, detail="user_id is required")
-    
     oauth_url = quickbooks.get_oauth_url(user_id)
-    return RedirectResponse(url=oauth_url)
+    return {"url": oauth_url}
 
 
 @router.get("/quickbooks/callback")
@@ -115,25 +111,26 @@ async def quickbooks_callback(
 ):
     """
     Handle QuickBooks OAuth callback.
-    
+
     Exchanges code for tokens and saves to database.
+    This endpoint is public (called by QuickBooks redirect, no JWT available).
     """
     if error:
         return RedirectResponse(
             url=f"{settings.frontend_url}/signup?error={error}"
         )
-    
+
     if not code or not state or not realmId:
         return RedirectResponse(
             url=f"{settings.frontend_url}/signup?error=missing_parameters"
         )
-    
+
     user_id = state
-    
+
     try:
         # Exchange code for tokens
         tokens = await quickbooks.exchange_code(code)
-        
+
         # Save connection
         await save_connection(
             user_id=user_id,
@@ -142,12 +139,12 @@ async def quickbooks_callback(
             refresh_token=tokens["refresh_token"],
             realm_id=realmId,
         )
-        
+
         # Redirect back to frontend with success
         return RedirectResponse(
             url=f"{settings.frontend_url}/signup?quickbooks=connected"
         )
-    
+
     except Exception as e:
         print(f"QuickBooks callback error: {e}")
         return RedirectResponse(
@@ -159,16 +156,14 @@ async def quickbooks_callback(
 # Connection Status
 # ============================================
 
-@router.get("/status/{user_id}")
-async def connection_status(user_id: str):
+@router.get("/status")
+async def connection_status(user_id: str = Depends(get_current_user)):
     """
-    Get connection status for a user.
-    
-    Returns which services are connected.
+    Get connection status for the authenticated user.
     """
     stripe_conn = await get_connection(user_id, "stripe")
     qbo_conn = await get_connection(user_id, "quickbooks")
-    
+
     return {
         "user_id": user_id,
         "stripe": {
@@ -185,12 +180,10 @@ async def connection_status(user_id: str):
     }
 
 
-@router.post("/disconnect/{user_id}/{service}")
-async def disconnect_service(user_id: str, service: str):
+@router.post("/disconnect/{service}")
+async def disconnect_service(service: str, user_id: str = Depends(get_current_user)):
     """
-    Disconnect a service.
-
-    Removes the stored tokens (doesn't revoke at provider level).
+    Disconnect a service for the authenticated user.
     """
     if service not in ["stripe", "quickbooks"]:
         raise HTTPException(status_code=400, detail="Invalid service")

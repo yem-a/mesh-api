@@ -4,17 +4,17 @@
 Sync routes for fetching transactions from Stripe and QuickBooks.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.database import get_connection, save_transactions, get_transactions
+from app.dependencies import get_current_user
 from app.integrations import stripe, quickbooks
 
 router = APIRouter()
 
 
 class SyncRequest(BaseModel):
-    user_id: str
     days: int = 30
 
 
@@ -31,27 +31,27 @@ class SyncResponse(BaseModel):
 # ============================================
 
 @router.post("/stripe", response_model=SyncResponse)
-async def sync_stripe(request: SyncRequest):
+async def sync_stripe(request: SyncRequest, user_id: str = Depends(get_current_user)):
     """
     Sync transactions from Stripe.
-    
+
     Fetches recent charges and saves to database.
     """
     # Get connection
-    connection = await get_connection(request.user_id, "stripe")
+    connection = await get_connection(user_id, "stripe")
     if not connection:
         raise HTTPException(
             status_code=404,
             detail="Stripe not connected. Please connect Stripe first."
         )
-    
+
     try:
         # Fetch transactions from Stripe
         transactions = await stripe.fetch_transactions(
             access_token=connection["access_token"],
             days=request.days,
         )
-        
+
         # Convert to dict format for database
         txn_dicts = [
             {
@@ -69,7 +69,7 @@ async def sync_stripe(request: SyncRequest):
         ]
 
         # Save to database
-        saved_count = await save_transactions(request.user_id, txn_dicts)
+        saved_count = await save_transactions(user_id, txn_dicts)
 
         # Build breakdown by type
         breakdown = {}
@@ -96,20 +96,20 @@ async def sync_stripe(request: SyncRequest):
 # ============================================
 
 @router.post("/quickbooks", response_model=SyncResponse)
-async def sync_quickbooks(request: SyncRequest):
+async def sync_quickbooks(request: SyncRequest, user_id: str = Depends(get_current_user)):
     """
     Sync transactions from QuickBooks.
-    
+
     Fetches recent payments and saves to database.
     """
     # Get connection
-    connection = await get_connection(request.user_id, "quickbooks")
+    connection = await get_connection(user_id, "quickbooks")
     if not connection:
         raise HTTPException(
             status_code=404,
             detail="QuickBooks not connected. Please connect QuickBooks first."
         )
-    
+
     try:
         # Fetch transactions from QuickBooks
         transactions = await quickbooks.fetch_transactions(
@@ -117,7 +117,7 @@ async def sync_quickbooks(request: SyncRequest):
             realm_id=connection["realm_id"],
             days=request.days,
         )
-        
+
         # Convert to dict format for database
         txn_dicts = [
             {
@@ -135,7 +135,7 @@ async def sync_quickbooks(request: SyncRequest):
         ]
 
         # Save to database
-        saved_count = await save_transactions(request.user_id, txn_dicts)
+        saved_count = await save_transactions(user_id, txn_dicts)
 
         # Build breakdown by type
         breakdown = {}
@@ -149,7 +149,7 @@ async def sync_quickbooks(request: SyncRequest):
             message=f"Synced {saved_count} transactions from QuickBooks",
             breakdown=breakdown,
         )
-    
+
     except Exception as e:
         # Check if token expired
         if "expired" in str(e).lower():
@@ -161,20 +161,20 @@ async def sync_quickbooks(request: SyncRequest):
                 # Update connection with new tokens
                 from app.database import save_connection
                 await save_connection(
-                    user_id=request.user_id,
+                    user_id=user_id,
                     service="quickbooks",
                     access_token=new_tokens["access_token"],
                     refresh_token=new_tokens["refresh_token"],
                     realm_id=connection["realm_id"],
                 )
                 # Retry the sync
-                return await sync_quickbooks(request)
-            except Exception as refresh_error:
+                return await sync_quickbooks(request, user_id)
+            except Exception:
                 raise HTTPException(
                     status_code=401,
                     detail="QuickBooks token expired. Please reconnect."
                 )
-        
+
         raise HTTPException(
             status_code=500,
             detail=f"Failed to sync QuickBooks: {str(e)}"
@@ -186,19 +186,19 @@ async def sync_quickbooks(request: SyncRequest):
 # ============================================
 
 @router.post("/all")
-async def sync_all(request: SyncRequest):
+async def sync_all(request: SyncRequest, user_id: str = Depends(get_current_user)):
     """
     Sync transactions from both Stripe and QuickBooks.
     """
     results = {
-        "user_id": request.user_id,
+        "user_id": user_id,
         "stripe": None,
         "quickbooks": None,
     }
-    
+
     # Sync Stripe
     try:
-        stripe_result = await sync_stripe(request)
+        stripe_result = await sync_stripe(request, user_id)
         results["stripe"] = {
             "success": True,
             "transactions": stripe_result.transactions_synced,
@@ -208,10 +208,10 @@ async def sync_all(request: SyncRequest):
             "success": False,
             "error": e.detail,
         }
-    
+
     # Sync QuickBooks
     try:
-        qbo_result = await sync_quickbooks(request)
+        qbo_result = await sync_quickbooks(request, user_id)
         results["quickbooks"] = {
             "success": True,
             "transactions": qbo_result.transactions_synced,
@@ -221,7 +221,7 @@ async def sync_all(request: SyncRequest):
             "success": False,
             "error": e.detail,
         }
-    
+
     return results
 
 
@@ -229,14 +229,14 @@ async def sync_all(request: SyncRequest):
 # Get Synced Transactions
 # ============================================
 
-@router.get("/transactions/{user_id}")
+@router.get("/transactions")
 async def get_synced_transactions(
-    user_id: str,
+    user_id: str = Depends(get_current_user),
     source: str = None,
     customer_id: str = None,
 ):
     """
-    Get synced transactions for a user.
+    Get synced transactions for the authenticated user.
 
     Optionally filter by source (stripe or quickbooks) and/or customer_id.
     """

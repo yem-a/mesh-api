@@ -7,7 +7,7 @@ The main endpoint that runs the matching engine.
 """
 
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
 
@@ -19,6 +19,7 @@ from app.database import (
 )
 from app.core.matching import reconcile
 from app.core.ai_assist import enhance_matches_with_ai
+from app.dependencies import get_current_user
 from app.models import TransactionCreate
 from app.config import get_settings
 
@@ -27,7 +28,6 @@ router = APIRouter()
 
 
 class ReconcileRequest(BaseModel):
-    user_id: str
     enhance_with_ai: bool = True
     persist: bool = True
 
@@ -47,27 +47,27 @@ class ReconcileResponse(BaseModel):
 # ============================================
 
 @router.post("/reconcile", response_model=ReconcileResponse)
-async def run_reconciliation(request: ReconcileRequest):
+async def run_reconciliation(request: ReconcileRequest, user_id: str = Depends(get_current_user)):
     """
-    Run reconciliation for a user.
-    
+    Run reconciliation for the authenticated user.
+
     1. Fetches synced transactions from database
     2. Runs the matching engine
     3. Optionally enhances with AI explanations
     4. Saves results to database
     """
     start_time = datetime.now()
-    
+
     # Get transactions from database
-    stripe_txns = await get_transactions(request.user_id, "stripe")
-    qbo_txns = await get_transactions(request.user_id, "quickbooks")
-    
+    stripe_txns = await get_transactions(user_id, "stripe")
+    qbo_txns = await get_transactions(user_id, "quickbooks")
+
     if not stripe_txns and not qbo_txns:
         raise HTTPException(
             status_code=400,
             detail="No transactions found. Please sync Stripe and QuickBooks first."
         )
-    
+
     # Convert to TransactionCreate objects
     stripe_transactions = [
         TransactionCreate(
@@ -98,31 +98,31 @@ async def run_reconciliation(request: ReconcileRequest):
         )
         for t in qbo_txns
     ]
-    
+
     # Run matching engine
-    result = reconcile(stripe_transactions, qbo_transactions, request.user_id)
-    
+    result = reconcile(stripe_transactions, qbo_transactions, user_id)
+
     # Enhance with AI if requested
     if request.enhance_with_ai and settings.enable_ai_explanations:
         try:
             result.matched = await enhance_matches_with_ai(
                 result.matched,
-                request.user_id,
+                user_id,
             )
         except Exception as e:
             print(f"AI enhancement failed: {e}")
             # Continue without AI - not a critical failure
-    
+
     # Persist results if requested
     if request.persist:
         try:
             # Save matches
             match_dicts = [m.model_dump() for m in result.matched]
-            await save_matches(request.user_id, match_dicts)
-            
+            await save_matches(user_id, match_dicts)
+
             # Save reconciliation run
             run = {
-                "user_id": request.user_id,
+                "user_id": user_id,
                 "period_start": result.period_start.isoformat() if result.period_start else None,
                 "period_end": result.period_end.isoformat() if result.period_end else None,
                 "total_stripe_transactions": result.summary.total_stripe_transactions,
@@ -147,9 +147,9 @@ async def run_reconciliation(request: ReconcileRequest):
         except Exception as e:
             print(f"Failed to persist results: {e}")
             # Continue - persistence failure shouldn't fail the whole request
-    
+
     duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
-    
+
     return ReconcileResponse(
         success=True,
         summary=result.summary.model_dump(),
@@ -169,24 +169,22 @@ async def run_reconciliation(request: ReconcileRequest):
 # Get Reconciliation Results
 # ============================================
 
-@router.get("/reconcile/{user_id}/results")
-async def get_reconciliation_results(user_id: str):
+@router.get("/reconcile/results")
+async def get_reconciliation_results(user_id: str = Depends(get_current_user)):
     """
-    Get the latest reconciliation results for a user.
-    
-    Returns matches and discrepancies.
+    Get the latest reconciliation results for the authenticated user.
     """
     from app.database import get_matches
-    
+
     matches, total = await get_matches(user_id, limit=100)
-    
+
     # Categorize
     discrepancies = {
         "critical": [],
         "warnings": [],
         "info": [],
     }
-    
+
     for match in matches:
         if match.get("has_discrepancy"):
             severity = match.get("discrepancy_severity", "info")
@@ -196,7 +194,7 @@ async def get_reconciliation_results(user_id: str):
                 discrepancies["warnings"].append(match)
             else:
                 discrepancies["info"].append(match)
-    
+
     return {
         "user_id": user_id,
         "total_matches": total,
@@ -214,13 +212,13 @@ async def get_reconciliation_results(user_id: str):
 # Reconciliation History (for trend chart)
 # ============================================
 
-@router.get("/reconcile/{user_id}/history")
+@router.get("/reconcile/history")
 async def get_reconciliation_history_endpoint(
-    user_id: str,
+    user_id: str = Depends(get_current_user),
     limit: int = Query(30, ge=1, le=90),
 ):
     """
-    Get reconciliation run history for a user.
+    Get reconciliation run history for the authenticated user.
 
     Returns historical runs for charting reconciliation trends.
     """
